@@ -1,0 +1,106 @@
+#include "arduino_secrets.h"
+#include <ESP8266WiFi.h>
+#include <espnow.h>
+#include <Servo.h>
+
+#include "thingProperties.h"
+
+Servo doorServo;
+
+bool gateRequest = false;
+
+typedef struct {
+  char command[64];
+} EspNowMessage;
+
+void openGate()
+{
+  Serial.println("OPENING GATE");
+
+  doorServo.write(90);
+  delay(3000);
+  doorServo.write(0);
+
+  Serial.println("GATE CLOSED");
+}
+
+void onReceive(uint8_t *mac, uint8_t *incomingData, uint8_t len)
+{
+  EspNowMessage msg;
+
+  memcpy(&msg, incomingData, sizeof(msg));
+
+  String qrValue = String(msg.command);
+
+  Serial.print("QR Data: ");
+  Serial.println(qrValue);
+
+  message = "ACCESS GRANTED - " + qrValue;
+  lastAccess = qrValue;
+
+  ArduinoCloud.update();
+
+  gateRequest = true;
+}
+
+void onCameraGateChange()
+{
+  if (camera_gate)
+  {
+    message = "MANUAL OPEN FROM CLOUD";
+    ArduinoCloud.update();
+
+    gateRequest = true;
+
+    camera_gate = false;
+    ArduinoCloud.update();
+  }
+}
+
+void onLastAccessChange()
+{
+}
+
+void onMessageChange()
+{
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(1500);
+
+  doorServo.attach(D4);
+  doorServo.write(0);
+
+  initProperties();
+
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != 0)
+  {
+    Serial.println("ESP-NOW Init Failed");
+    return;
+  }
+
+  esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
+  esp_now_register_recv_cb(onReceive);
+
+  Serial.println("System Ready");
+}
+
+void loop()
+{
+  ArduinoCloud.update();
+
+  if (gateRequest)
+  {
+    gateRequest = false;
+    openGate();
+  }
+}

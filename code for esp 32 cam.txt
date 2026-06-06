@@ -1,0 +1,102 @@
+#include <WiFi.h>
+#include <esp_now.h>
+#include <ESP32QRCodeReader.h>
+
+ESP32QRCodeReader reader(CAMERA_MODEL_AI_THINKER);
+
+typedef struct {
+  char command[64];
+} Message;
+
+Message msg;
+
+uint8_t receiverMac[] =
+{
+  0xDC,
+  0x4F,
+  0x22,
+  0x64,
+  0x94,
+  0x6C
+};
+
+unsigned long lastSend = 0;
+
+void onDataSent(const uint8_t *mac_addr,
+                esp_now_send_status_t status)
+{
+  Serial.print("Send Status: ");
+
+  if (status == ESP_NOW_SEND_SUCCESS)
+    Serial.println("Success");
+  else
+    Serial.println("Fail");
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != ESP_OK)
+  {
+    Serial.println("ESP-NOW Init Failed");
+    return;
+  }
+
+  esp_now_register_send_cb(onDataSent);
+
+  esp_now_peer_info_t peerInfo = {};
+
+  memcpy(peerInfo.peer_addr, receiverMac, 6);
+
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK)
+  {
+    Serial.println("Failed To Add Peer");
+    return;
+  }
+
+  reader.setup();
+  reader.begin();
+
+  Serial.println("QR Scanner Ready");
+}
+
+void loop()
+{
+  QRCodeData qrCodeData;
+
+  if (reader.receiveQrCode(&qrCodeData, 100))
+  {
+    if (qrCodeData.valid)
+    {
+      String data = (const char *)qrCodeData.payload;
+
+      Serial.print("QR: ");
+      Serial.println(data);
+
+      if (millis() - lastSend > 5000)
+      {
+        memset(&msg, 0, sizeof(msg));
+
+        strncpy(msg.command,
+                data.c_str(),
+                sizeof(msg.command) - 1);
+
+        esp_now_send(
+          receiverMac,
+          (uint8_t *)&msg,
+          sizeof(msg));
+
+        Serial.print("QR SENT: ");
+        Serial.println(msg.command);
+
+        lastSend = millis();
+      }
+    }
+  }
+}

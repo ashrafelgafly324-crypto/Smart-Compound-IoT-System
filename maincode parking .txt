@@ -1,0 +1,281 @@
+#include "arduino_secrets.h"
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+#include <FastLED.h>
+#include <ESP32Servo.h>
+#include "thingProperties.h"
+
+Adafruit_SH1106G display = Adafruit_SH1106G(128, 64, &Wire, -1);
+
+#define LED_PIN 19
+#define NUM_LEDS 10
+
+CRGB leds[NUM_LEDS];
+
+#define IR1 13
+#define IR2 14
+#define IR3 27
+#define IR4 26
+#define IR5 25
+
+#define IR6 33
+
+#define SERVO_PIN 18
+Servo gateServo;
+
+bool slotState[5];
+
+bool guiding = false;
+bool motionTriggered = false;
+
+int targetSlot = -1;
+
+
+void setup()
+{
+  Serial.begin(115200);
+  initProperties();
+
+ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+setDebugMessageLevel(2);
+ArduinoCloud.printDebugInfo();
+
+  pinMode(IR1, INPUT);
+  pinMode(IR2, INPUT);
+  pinMode(IR3, INPUT);
+  pinMode(IR4, INPUT);
+  pinMode(IR5, INPUT);
+
+  pinMode(IR6, INPUT);
+
+  Wire.begin(21,22);
+
+  display.begin(0x3C, true);
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SH110X_WHITE);
+  display.setCursor(5,20);
+  display.println("PARKING");
+  display.display();
+
+  FastLED.addLeds<WS2811, LED_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.setBrightness(80);
+
+  FastLED.clear();
+  FastLED.show();
+
+  gateServo.attach(SERVO_PIN);
+  gateServo.write(0);
+  Parking_Gate = false;
+
+  delay(2000);
+
+  showReady();
+}
+
+
+void loop()
+
+{
+  ArduinoCloud.update();
+  
+  static unsigned long lastPrint = 0;
+
+  if (millis() - lastPrint > 5000) {
+    lastPrint = millis();
+    Serial.println("Cloud Running...");
+  }
+  
+  readParking();
+
+  int motionState = digitalRead(IR6);
+
+  if(motionState == LOW && !motionTriggered && !guiding)
+  {
+    motionTriggered = true;
+
+    targetSlot = getFirstFreeSlot();
+
+    if(targetSlot == -1)
+    {
+      showFull();
+
+      gateServo.write(0);
+      Parking_Gate = false;
+
+      FastLED.clear();
+      FastLED.show();
+    }
+    else
+    {
+      Serial.println("Motion Detected");
+
+      gateServo.write(90);
+      Parking_Gate = true;
+
+      showTarget(targetSlot);
+
+      guideToSlot(targetSlot);
+
+      guiding = true;
+    }
+  }
+
+  if(motionState == HIGH)
+  {
+    motionTriggered = false;
+  }
+
+  if(guiding && slotState[targetSlot])
+  {
+    FastLED.clear();
+    FastLED.show();
+
+    gateServo.write(0);
+    Parking_Gate = false;
+
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setCursor(10,20);
+    display.println("PARKED");
+    display.display();
+
+    delay(2000);
+
+    showReady();
+
+    guiding = false;
+    targetSlot = -1;
+  }
+
+  delay(100);
+}
+
+
+void readParking()
+{
+
+  slotState[0] = (digitalRead(IR1) == LOW);
+  slotState[1] = (digitalRead(IR2) == LOW);
+  slotState[2] = (digitalRead(IR3) == LOW);
+  slotState[3] = (digitalRead(IR4) == LOW);
+  slotState[4] = (digitalRead(IR5) == LOW);
+}
+
+// =========================================
+
+int getFirstFreeSlot()
+{
+  for(int i=0;i<5;i++)
+  {
+    if(!slotState[i])
+      return i;
+  }
+
+  return -1;
+}
+
+
+void showReady()
+{
+  display.clearDisplay();
+
+  display.setTextSize(2);
+
+  display.setCursor(15,20);
+
+  display.println("READY");
+
+  display.display();
+}
+
+
+void showFull()
+{
+  display.clearDisplay();
+
+  display.setTextSize(2);
+
+  display.setCursor(20,20);
+
+  display.println("FULL");
+
+  display.display();
+}
+
+
+void showTarget(int slot)
+{
+  display.clearDisplay();
+
+  display.setTextSize(2);
+
+  display.setCursor(5,0);
+
+  display.println("GO TO");
+
+  display.setCursor(40,35);
+
+  display.print("P");
+  display.print(slot + 1);
+
+  display.display();
+}
+
+
+void guideToSlot(int slot)
+{
+  FastLED.clear();
+
+  switch(slot)
+  {
+      leds[0]=CRGB::Blue;
+      leds[1]=CRGB::Blue;
+      leds[2]=CRGB::Blue;
+      leds[3]=CRGB::Blue;
+      leds[4]=CRGB::Blue;
+        break;
+
+      leds[0]=CRGB::Blue;
+      leds[1]=CRGB::Blue;
+      leds[2]=CRGB::Blue;
+      leds[5]=CRGB::Blue;
+      break;
+
+      leds[0]=CRGB::Blue;
+      leds[1]=CRGB::Blue;
+      leds[2]=CRGB::Blue;
+      leds[6]=CRGB::Blue;
+      break;
+
+      leds[0]=CRGB::Blue;
+      leds[1]=CRGB::Blue;
+      leds[7]=CRGB::Blue;
+      break;
+
+      leds[0]=CRGB::Blue;
+      leds[1]=CRGB::Blue;
+      leds[8]=CRGB::Blue;
+      break;
+  }
+
+  FastLED.show();
+}
+/*
+  Since ParkingGate is READ_WRITE variable, onParkingGateChange() is
+  executed every time a new value is received from IoT Cloud.
+*/
+void onParkingGateChange()
+{
+  if(Parking_Gate)
+  {
+    gateServo.write(90);
+  }
+  else
+  {
+    gateServo.write(0);
+  }
+}

@@ -1,0 +1,382 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+#include "BluetoothA2DPSource.h"
+#include <WiFiClient.h>
+
+WiFiClient esp8266Client;
+
+const char* esp8266IP = "172.17.156.22";
+
+const char SSID[] = "vivo";
+const char PASS[] = "123456789";
+const char* btDeviceName = "K12";
+
+WebServer server(80);
+
+#define BLT_LED 14
+
+#define SMOKE1 4
+#define SMOKE2 5
+#define SMOKE3 16
+#define SMOKE4 17
+
+#define IR1 18
+#define IR2 19
+#define IR3 21
+#define IR4 22
+
+BluetoothA2DPSource a2dp_source;
+
+File uploadFile;
+File audioFile;
+
+bool playbackDone = false;
+bool isPlaying = false;
+
+bool btConnected = false;
+
+String currentFile = "/ir.wav";
+
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Audio Upload</title>
+</head>
+<body>
+
+<h2>Upload Audio File</h2>
+
+<form method="POST" action="/upload" enctype="multipart/form-data">
+  <input type="file" name="audio">
+  <input type="submit" value="Upload">
+</form>
+
+<p>
+اسم الملف لازم يكون:
+<br>
+ir.wav
+<br>
+او
+<br>
+smoke.wav
+</p>
+
+</body>
+</html>
+)rawliteral";
+
+void connection_state_changed(esp_a2d_connection_state_t state, void *ptr)
+{
+    if (state == ESP_A2D_CONNECTION_STATE_CONNECTED)
+    {
+        btConnected = true;
+
+        Serial.println("Bluetooth Connected");
+    }
+    else
+    {
+        btConnected = false;
+
+        Serial.println("Bluetooth Disconnected");
+    }
+}
+
+int32_t get_sound_data(uint8_t *data, int32_t len)
+{
+    if (playbackDone) return 0;
+
+    if (!audioFile)
+    {
+        playbackDone = true;
+        isPlaying = false;
+        return 0;
+    }
+
+    int halfLen = len / 2;
+
+    int16_t *monoBuffer = (int16_t *)malloc(halfLen);
+
+    if (monoBuffer == NULL)
+    {
+        return 0;
+    }
+
+    int bytesRead = audioFile.read((uint8_t*)monoBuffer, halfLen);
+
+    if (bytesRead <= 0)
+    {
+        Serial.println("Playback Finished");
+
+        playbackDone = true;
+
+        audioFile.close();
+
+        digitalWrite(BLT_LED, LOW);
+
+        isPlaying = false;
+
+        free(monoBuffer);
+
+        return 0;
+    }
+
+    int samplesRead = bytesRead / 2;
+
+    int16_t *outputBuffer = (int16_t *)data;
+
+    int targetIndex = 0;
+
+    for (int i = 0; i < samplesRead; i++)
+    {
+        outputBuffer[targetIndex++] = monoBuffer[i];
+        outputBuffer[targetIndex++] = monoBuffer[i];
+    }
+
+    free(monoBuffer);
+
+    return samplesRead * 4;
+}
+
+void handleRoot()
+{
+    server.send(200, "text/html", index_html);
+}
+
+void handleUpload()
+{
+    HTTPUpload& upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START)
+    {
+        String filename = "/" + upload.filename;
+
+        Serial.println("Uploading: " + filename);
+
+        uploadFile = SPIFFS.open(filename, FILE_WRITE);
+
+        if (!uploadFile)
+        {
+            Serial.println("File Open Failed");
+            return;
+        }
+    }
+
+    else if (upload.status == UPLOAD_FILE_WRITE)
+    {
+        if (uploadFile)
+        {
+            uploadFile.write(upload.buf, upload.currentSize);
+        }
+    }
+
+    else if (upload.status == UPLOAD_FILE_END)
+    {
+        if (uploadFile)
+        {
+            uploadFile.close();
+        }
+
+        Serial.println("Upload Complete");
+
+        server.send(200, "text/plain", "File Uploaded");
+    }
+}
+
+void startPlayback(String filename)
+{
+    if (!btConnected)
+    {
+        Serial.println("Bluetooth Not Connected Yet");
+        return;
+    }
+
+    if (isPlaying) return;
+
+    Serial.println("Playing: " + filename);
+
+    playbackDone = false;
+
+    isPlaying = true;
+
+    currentFile = filename;
+
+    if (audioFile)
+    {
+        audioFile.close();
+    }
+
+    audioFile = SPIFFS.open(currentFile, "r");
+
+    if (!audioFile)
+    {
+        Serial.println("Error opening file");
+
+        playbackDone = true;
+        isPlaying = false;
+
+        return;
+    }
+
+    audioFile.seek(44, SeekSet);
+
+    digitalWrite(BLT_LED, HIGH);
+}
+
+void setup()
+{
+    Serial.begin(115200);
+
+    pinMode(BLT_LED, OUTPUT);
+
+    digitalWrite(BLT_LED, LOW);
+
+    pinMode(SMOKE1, INPUT_PULLUP);
+    pinMode(SMOKE2, INPUT_PULLUP);
+    pinMode(SMOKE3, INPUT_PULLUP);
+    pinMode(SMOKE4, INPUT_PULLUP);
+
+    pinMode(IR1, INPUT_PULLUP);
+    pinMode(IR2, INPUT_PULLUP);
+    pinMode(IR3, INPUT_PULLUP);
+    pinMode(IR4, INPUT_PULLUP);
+
+    if (!SPIFFS.begin(true))
+    {
+        Serial.println("SPIFFS Error");
+        return;
+    }
+
+    WiFi.begin(SSID, PASS);
+
+    Serial.println("Connecting WiFi");
+
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WiFi Connected");
+    Serial.println(WiFi.localIP());
+
+    server.on("/", HTTP_GET, handleRoot);
+
+    server.on("/upload", HTTP_POST,
+        []()
+        {
+            server.send(200);
+        },
+        handleUpload
+    );
+
+    server.begin();
+
+    Serial.println("Web Server Started");
+
+        a2dp_source.set_data_callback(get_sound_data);
+
+    a2dp_source.set_on_connection_state_changed(connection_state_changed);
+
+    a2dp_source.start(btDeviceName);
+
+    Serial.println("Waiting Bluetooth Connection...");
+
+    while (!btConnected)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("Bluetooth Connected Successfully");
+}
+
+void loop()
+{
+    server.handleClient();
+
+    if (!btConnected)
+    {
+        return;
+    }
+
+    if (digitalRead(SMOKE1) == LOW)
+    {
+        startPlayback("/smoke.wav");
+        delay(500);
+    }
+
+    if (digitalRead(SMOKE2) == LOW)
+    {
+        startPlayback("/smoke.wav");
+        delay(500);
+    }
+
+    if (digitalRead(SMOKE3) == LOW)
+    {
+        startPlayback("/smoke.wav");
+        delay(500);
+    }
+
+    if (digitalRead(SMOKE4) == LOW)
+    {
+        startPlayback("/smoke.wav");
+        delay(500);
+    }
+
+    if (digitalRead(IR1) == LOW)
+    {
+        startPlayback("/ir.wav");
+        delay(500);
+    }
+
+    if (digitalRead(IR2) == LOW)
+    {
+        startPlayback("/ir.wav");
+        delay(500);
+    }
+
+    if (digitalRead(IR3) == LOW)
+    {
+        startPlayback("/ir.wav");
+        delay(500);
+    }
+
+    if (digitalRead(IR4) == LOW)
+    {
+        startPlayback("/ir.wav");
+        delay(500);
+    }
+    static unsigned long lastSend = 0;
+
+if (millis() - lastSend > 1000)
+{
+    lastSend = millis();
+
+    bool smokeState =
+        (digitalRead(SMOKE1) == LOW) ||
+        (digitalRead(SMOKE2) == LOW) ||
+        (digitalRead(SMOKE3) == LOW) ||
+        (digitalRead(SMOKE4) == LOW);
+
+    bool fireState =
+        (digitalRead(IR1) == LOW) ||
+        (digitalRead(IR2) == LOW) ||
+        (digitalRead(IR3) == LOW) ||
+        (digitalRead(IR4) == LOW);
+
+    String msg =
+        "SMOKE=" + String(smokeState) +
+        ",FIRE=" + String(fireState);
+
+    if (esp8266Client.connect(esp8266IP, 80))
+    {
+        esp8266Client.println(msg);
+        esp8266Client.stop();
+    }
+}
+}

@@ -1,0 +1,27 @@
+#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+
+const char DEVICE_LOGIN_NAME[] = "c92f82e7-f520-4d2a-9dcf-6c0e92f0b846";
+
+const char SSID[] = "vivo";
+const char PASS[] = "123456789";
+const char DEVICE_KEY[] = "eY@TBVy!TvNpmidS8UizA3uct";
+
+void onParkingGateChange();
+
+bool Parking_Gate;
+
+void initProperties()
+{
+  ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
+  ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
+
+  ArduinoCloud.addProperty(
+    Parking_Gate,
+    READWRITE,
+    ON_CHANGE,
+    onParkingGateChange
+  );
+}
+
+WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);

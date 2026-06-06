@@ -1,0 +1,79 @@
+#include "arduino_secrets.h"
+#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+
+const char DEVICE_LOGIN_NAME[] = "1111cd8b-7f5f-44fa-8cbb-d621335e04ff";
+
+const char SSID[] = "vivo";
+const char PASS[] = "123456789";
+const char DEVICE_KEY[] = "GdFEXJxCmvDW89bjayDfpNB#i";
+
+#define IN1 D1
+#define IN2 D2
+
+bool pump;
+
+void onPumpChange();
+
+void initProperties() {
+  ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
+  ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
+
+  ArduinoCloud.addProperty(
+    pump,
+    READWRITE,
+    ON_CHANGE,
+    onPumpChange
+  );
+}
+
+WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+
+  Serial.println("Starting...");
+
+  initProperties();
+
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+}
+
+void loop() {
+  ArduinoCloud.update();
+
+  static unsigned long lastPrint = 0;
+
+  if (millis() - lastPrint > 5000) {
+    lastPrint = millis();
+    Serial.print("Pump State = ");
+    Serial.println(pump);
+  }
+}
+
+void onPumpChange() {
+
+  if (pump) {
+     
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+
+    Serial.println("PUMP ON");
+  } else {
+   
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+
+    Serial.println("PUMP OFF");
+  }
+}

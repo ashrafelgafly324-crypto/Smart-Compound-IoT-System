@@ -1,0 +1,30 @@
+#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+
+const char DEVICE_LOGIN_NAME[] = "cd2323b9-4d95-43f3-9ffa-e2658a85873d";
+
+const char SSID[] = "vivo";
+const char PASS[] = "123456789";
+const char DEVICE_KEY[] = "zbN8SMRWSI36RnPnZcw5Tkmkb";
+
+
+
+void onLastAccessChange();
+void onMessageChange();
+void onCameraGateChange();
+
+String lastAccess;
+String message;
+bool camera_gate;
+
+void initProperties(){
+
+  ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
+  ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
+  ArduinoCloud.addProperty(lastAccess, READWRITE, ON_CHANGE, onLastAccessChange);
+  ArduinoCloud.addProperty(message, READWRITE, ON_CHANGE, onMessageChange);
+  ArduinoCloud.addProperty(camera_gate, READWRITE, ON_CHANGE, onCameraGateChange);
+
+}
+
+WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);

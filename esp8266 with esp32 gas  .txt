@@ -1,0 +1,123 @@
+#include "arduino_secrets.h"
+#include "thingProperties.h"
+#include <ESP8266WiFi.h>
+
+WiFiServer server(80);
+
+unsigned long lastPrint = 0;
+
+void setup() {
+
+  Serial.begin(115200);
+  delay(2000);
+
+  Serial.println();
+  Serial.println("Starting...");
+
+  initProperties();
+
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+
+  delay(5000);
+
+  Serial.println();
+  Serial.print("WiFi Status = ");
+  Serial.println(WiFi.status());
+
+  Serial.print("ESP8266 IP = ");
+  Serial.println(WiFi.localIP());
+
+  server.begin();
+
+  Serial.println("Server Started");
+}
+
+void loop() {
+
+  ArduinoCloud.update();
+
+  if (millis() - lastPrint > 5000) {
+
+    lastPrint = millis();
+
+    Serial.print("Cloud Connected = ");
+    Serial.println(ArduinoCloud.connected());
+
+    Serial.print("IP = ");
+    Serial.println(WiFi.localIP());
+
+    Serial.print("Smoke = ");
+    Serial.println(smoke);
+
+    Serial.print("Fire = ");
+    Serial.println(fire);
+
+    Serial.print("Message = ");
+    Serial.println(message);
+
+    Serial.println("------------------");
+  }
+
+  WiFiClient client = server.available();
+
+  if (client) {
+
+    Serial.println("ESP32 Connected");
+
+    String data = client.readStringUntil('\n');
+
+    Serial.print("Received: ");
+    Serial.println(data);
+
+    int smokePos = data.indexOf("SMOKE=");
+    int firePos  = data.indexOf(",FIRE=");
+
+    if (smokePos >= 0 && firePos >= 0) {
+
+      String smokeValue = data.substring(smokePos + 6, firePos);
+      String fireValue  = data.substring(firePos + 6);
+
+      smokeValue.trim();
+      fireValue.trim();
+
+      smoke = smokeValue;
+      fire  = fireValue;
+
+      if (smokeValue == "1") {
+
+        message = "WARNING: SMOKE DETECTED";
+
+      }
+      else if (fireValue == "1") {
+
+        message = "WARNING: FIRE DETECTED";
+
+      }
+
+      Serial.print("Smoke Updated = ");
+      Serial.println(smoke);
+
+      Serial.print("Fire Updated = ");
+      Serial.println(fire);
+
+      Serial.print("Message Updated = ");
+      Serial.println(message);
+    }
+
+    client.stop();
+
+    Serial.println("Client Disconnected");
+  }
+}
+
+void onSmokeChange() {
+}
+
+void onFireChange() {
+}
+
+void onMessageChange() {
+}

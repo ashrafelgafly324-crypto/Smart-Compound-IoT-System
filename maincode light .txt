@@ -1,0 +1,87 @@
+#include "arduino_secrets.h"
+#include <Servo.h>
+#include "thingProperties.h"
+
+#define LIGHT_PIN D5
+#define RELAY_PIN D1
+#define BUTTON_PIN D6
+#define SERVO_PIN D2
+
+Servo myServo;
+
+bool relayState = false;
+
+unsigned long lastChange = 0;
+const unsigned long debounceTime = 500;
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(LIGHT_PIN, INPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  digitalWrite(RELAY_PIN, LOW);
+
+  myServo.attach(SERVO_PIN);
+  myServo.write(0);
+
+  initProperties();
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+
+  Serial.println("System Started");
+}
+
+void loop() {
+
+  ArduinoCloud.update();
+
+
+  int lightState = digitalRead(LIGHT_PIN);
+
+  bool relayRequest = false;
+
+  if (lightState == HIGH) {
+    relayRequest = true;
+  }
+
+  if (light_button) {
+    relayRequest = true;
+  }
+
+  if (millis() - lastChange > debounceTime) {
+
+    if (relayRequest && !relayState) {
+      relayState = true;
+      digitalWrite(RELAY_PIN, HIGH);
+      lastChange = millis();
+    }
+
+    else if (!relayRequest && relayState) {
+      relayState = false;
+      digitalWrite(RELAY_PIN, LOW);
+      lastChange = millis();
+    }
+  }
+
+
+  bool hardwareButton = (digitalRead(BUTTON_PIN) == LOW);
+
+  if (hardwareButton || gate) {
+    myServo.write(180);
+  } else {
+    myServo.write(0);
+  }
+
+  delay(20);
+}
+
+void onGateChange() {
+}
+
+void onLightButtonChange() {
+}

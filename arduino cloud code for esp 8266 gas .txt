@@ -1,0 +1,29 @@
+
+#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+
+const char DEVICE_LOGIN_NAME[]  = "f5b99bf7-b924-463f-a43f-10a77240c144";
+
+const char SSID[]               = SECRET_SSID;    // Network SSID (name)
+const char PASS[]               = SECRET_OPTIONAL_PASS;    // Network password (use for WPA, or use as key for WEP)
+const char DEVICE_KEY[]  = SECRET_DEVICE_KEY;    // Secret device password
+
+void onFireChange();
+void onMessageChange();
+void onSmokeChange();
+
+String fire;
+String message;
+String smoke;
+
+void initProperties(){
+
+  ArduinoCloud.setBoardId(DEVICE_LOGIN_NAME);
+  ArduinoCloud.setSecretDeviceKey(DEVICE_KEY);
+  ArduinoCloud.addProperty(fire, READWRITE, ON_CHANGE, onFireChange);
+  ArduinoCloud.addProperty(message, READWRITE, ON_CHANGE, onMessageChange);
+  ArduinoCloud.addProperty(smoke, READWRITE, ON_CHANGE, onSmokeChange);
+
+}
+
+WiFiConnectionHandler ArduinoIoTPreferredConnection(SSID, PASS);
